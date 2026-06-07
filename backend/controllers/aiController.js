@@ -1,49 +1,21 @@
 const Donation = require('../models/Donation');
 const Campaign = require('../models/Campaign');
 
-const callGemini = async (prompt, systemPrompt = null) => {
+const callGemini = async (prompt) => {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('No Gemini key');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
-  const contents = [];
-  if (systemPrompt) {
-    contents.push({ role:'user',  parts:[{ text:systemPrompt }] });
-    contents.push({ role:'model', parts:[{ text:'Understood.' }] });
-  }
-  contents.push({ role:'user', parts:[{ text:prompt }] });
-  const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ contents, generationConfig:{ maxOutputTokens:500 } }) });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 500 }
+    })
+  });
   if (!res.ok) throw new Error(`Gemini error: ${await res.text()}`);
   const data = await res.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-};
-
-const callGeminiStream = async (messages, systemPrompt, res) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('No Gemini key');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key=${key}`;
-  const contents = [];
-  if (systemPrompt) {
-    contents.push({ role:'user',  parts:[{ text:systemPrompt }] });
-    contents.push({ role:'model', parts:[{ text:'Understood.' }] });
-  }
-  messages.forEach(m => { contents.push({ role: m.role==='assistant'?'model':'user', parts:[{ text:m.content }] }); });
-  const response = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ contents, generationConfig:{ maxOutputTokens:500 } }) });
-  if (!response.ok) throw new Error(`Gemini stream error: ${await response.text()}`);
-  const reader  = response.body.getReader();
-  const decoder = new TextDecoder();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value);
-    const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
-    for (const line of lines) {
-      try {
-        const data = JSON.parse(line.slice(6));
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) res.write(`data: ${JSON.stringify({ text })}\n\n`);
-      } catch {}
-    }
-  }
 };
 
 exports.getRecommendations = async (req, res) => {
@@ -103,22 +75,60 @@ exports.getImpact = async (req, res) => {
   }
 };
 
+// Non-streaming chat — more reliable across all environments
 exports.chat = async (req, res) => {
   const { messages } = req.body;
   if (!messages?.length) return res.status(400).json({ success:false, message:'Messages required.' });
+
   res.setHeader('Content-Type','text/event-stream');
   res.setHeader('Cache-Control','no-cache');
   res.setHeader('Connection','keep-alive');
+
   try {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) throw new Error('No Gemini key');
+
     const campaigns = await Campaign.find({ isActive:true }).select('title category raisedAmount targetAmount isUrgent emoji').lean();
     const campContext = campaigns.map(c=>`- ${c.emoji} ${c.title} (${c.category}): PKR ${(c.raisedAmount/1000).toFixed(0)}K of PKR ${(c.targetAmount/1000).toFixed(0)}K${c.isUrgent?' [URGENT]':''}`).join('\n');
-    const systemPrompt = `You are NASEER, a compassionate AI assistant for a Palestinian humanitarian donation platform. "NASEER" means "The Helper" in Arabic.\n\nLIVE CAMPAIGNS:\n${campContext}\n\nHelp donors understand campaigns, how donations work (Zakat/Sadaqah/Lillah), NGO verification, and impact. Be warm, concise, and compassionate.`;
-    await callGeminiStream(messages, systemPrompt, res);
+
+    const systemPrompt = `You are NASEER, a compassionate AI assistant for a Palestinian humanitarian donation platform. "NASEER" means "The Helper" in Arabic.\n\nLIVE CAMPAIGNS:\n${campContext}\n\nHelp donors understand campaigns, how donations work (Zakat/Sadaqah/Lillah), NGO verification, and impact. Be warm, concise, and compassionate. Recommend urgent campaigns when asked what to donate to.`;
+
+    // Build conversation history
+    const contents = [
+      { role:'user',  parts:[{ text: systemPrompt }] },
+      { role:'model', parts:[{ text:'Understood! I am NASEER, ready to help donors support Palestine.' }] }
+    ];
+
+    messages.forEach(m => {
+      contents.push({
+        role:  m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      });
+    });
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents, generationConfig: { maxOutputTokens: 500 } })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini error: ${errText}`);
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm sorry, I couldn't generate a response. Please try again.";
+
+    // Send as SSE so frontend works without changes
+    res.write(`data: ${JSON.stringify({ text })}\n\n`);
     res.write('data: [DONE]\n\n');
     res.end();
+
   } catch(err) {
     console.error('Chat error:', err.message);
-    res.write(`data: ${JSON.stringify({ text:"I'm having trouble connecting right now. Please try again shortly." })}\n\n`);
+    res.write(`data: ${JSON.stringify({ text: "I'm having trouble connecting right now. Please try again shortly." })}\n\n`);
     res.write('data: [DONE]\n\n');
     res.end();
   }
