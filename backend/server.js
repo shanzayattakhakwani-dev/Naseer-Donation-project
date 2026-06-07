@@ -4,6 +4,7 @@ const mongoose   = require('mongoose');
 const cors       = require('cors');
 const morgan     = require('morgan');
 const path       = require('path');
+const fs         = require('fs');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
@@ -25,8 +26,8 @@ io.on('connection', (socket) => {
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json());
 app.use(morgan('dev'));
-app.use(express.static(path.join(__dirname, '../frontend/build')));
 
+// ── API Routes FIRST (before static files) ───────────────
 app.use('/api/auth',          require('./routes/auth'));
 app.use('/api/campaigns',     require('./routes/campaigns'));
 app.use('/api/donations',     require('./routes/donations'));
@@ -47,26 +48,37 @@ app.get('/api/verify/:transactionId', async (req, res) => {
       .populate('campaign', 'title emoji');
     if (!d) return res.status(404).json({ success: false, message: 'Donation not found.' });
     res.json({ success: true, data: {
-      donorName:  d.isAnonymous ? 'Anonymous' : d.donorName,
-      amount:     d.amount,
-      campaign:   d.campaign?.title,
-      receiptId:  d.receiptId,
-      date:       d.createdAt,
-      status:     d.status
+      donorName: d.isAnonymous ? 'Anonymous' : d.donorName,
+      amount:    d.amount,
+      campaign:  d.campaign?.title,
+      receiptId: d.receiptId,
+      date:      d.createdAt,
+      status:    d.status
     }});
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }
 });
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
-});
+// ── Serve Frontend AFTER API routes ──────────────────────
+const frontendBuild = path.join(__dirname, '../frontend/build');
+if (fs.existsSync(frontendBuild)) {
+  app.use(express.static(frontendBuild));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendBuild, 'index.html'));
+  });
+} else {
+  app.get('*', (req, res) => {
+    res.json({ message: 'NASEER API is running!', health: '/api/health', campaigns: '/api/campaigns' });
+  });
+}
 
+// ── Error Handler ─────────────────────────────────────────
 app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ success: false, message: err.message || 'Server Error' });
 });
 
+// ── Connect & Start ───────────────────────────────────────
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB connected');
