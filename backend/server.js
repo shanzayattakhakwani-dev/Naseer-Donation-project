@@ -4,7 +4,7 @@ const mongoose  = require('mongoose');
 const cors      = require('cors');
 const morgan    = require('morgan');
 const path      = require('path');
-const killPort  = require('kill-port');
+
 const { Server } = require('socket.io');
 require('dotenv').config();
 
