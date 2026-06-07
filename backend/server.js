@@ -55,12 +55,13 @@ mongoose.connect(process.env.MONGO_URI)
   .then(async () => {
     console.log('MongoDB connected');
     const PORT = parseInt(process.env.PORT) || 5000;
-    try {
-      await killPort(PORT);
-      console.log(` Cleared port ${PORT}`);
-    } catch (_) {
-      // port was already free, no problem
-    }
+   .then(() => {
+    console.log('MongoDB connected');
+    const PORT = parseInt(process.env.PORT) || 5000;
+    server.listen(PORT, () => {
+      console.log(`NASEER server running at http://localhost:${PORT}`);
+    });
+  })
     server.listen(PORT, () => {
       console.log(` NASEER server running at http://localhost:${PORT}`);
     });
