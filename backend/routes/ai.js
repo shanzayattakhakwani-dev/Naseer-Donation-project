@@ -1,0 +1,10 @@
+const express = require('express');
+const { protect, optionalAuth } = require('../middleware/auth');
+const { getRecommendations, getSuggestions, generateContent, getImpact, chat } = require('../controllers/aiController');
+const router = express.Router();
+router.get('/recommendations', optionalAuth, getRecommendations);
+router.get('/suggestions/:campaignId', getSuggestions);
+router.post('/generate-content', protect, generateContent);
+router.get('/impact/:campaignId', getImpact);
+router.post('/chat', chat);
+module.exports = router;

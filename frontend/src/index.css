@@ -1,0 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Bebas+Neue&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --black:       #0D0D0D;
+  --white:       #FAFAF8;
+  --green:       #1A7A4A;
+  --green-light: #D6EFE1;
+  --green-mid:   #2EA868;
+  --green-dark:  #0F5233;
+  --red:         #C8102E;
+  --red-light:   #FDEAEA;
+  --red-dark:    #8B0D1F;
+  --sand:        #F5F0E8;
+  --border:      #E2DDD5;
+  --muted:       #6B6560;
+  --card:        #FFFFFF;
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body:    'DM Sans', system-ui, sans-serif;
+  --font-impact:  'Bebas Neue', sans-serif;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--white);
+  color: var(--black);
+  font-size: 15px;
+  line-height: 1.65;
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--green-mid); border-radius: 3px; }
+button, input, select, textarea { font-family: var(--font-body); }
+a { color: var(--green); text-decoration: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeUp { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }

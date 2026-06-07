@@ -1,0 +1,10 @@
+const express = require('express');
+const { protect, restrictTo } = require('../middleware/auth');
+const { createDonation, getMyDonations, getAllDonations, getDonationStats, downloadPDF } = require('../controllers/donationController');
+const router = express.Router();
+router.post('/', protect, createDonation);
+router.get('/my', protect, getMyDonations);
+router.get('/stats', protect, restrictTo('admin'), getDonationStats);
+router.get('/pdf/:id', protect, downloadPDF);
+router.get('/', protect, restrictTo('admin'), getAllDonations);
+module.exports = router;
