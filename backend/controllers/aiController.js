@@ -1,30 +1,34 @@
 const Donation = require('../models/Donation');
 const Campaign = require('../models/Campaign');
 
-const callGemini = async (prompt) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('No Gemini key');
+const callGroq = async (messages, systemPrompt = null) => {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error('No Groq key configured');
 
-  // New v1beta endpoint that supports AQ.Ab... keys
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+  const msgs = [];
+  if (systemPrompt) msgs.push({ role: 'system', content: systemPrompt });
+  messages.forEach(m => msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
 
-  const res = await fetch(url, {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`
+    },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: 500 }
+      model: 'llama3-8b-8192',
+      messages: msgs,
+      max_tokens: 500,
+      temperature: 0.7
     })
   });
 
   const data = await res.json();
-
   if (!res.ok) {
-    console.error('Gemini API error:', JSON.stringify(data));
-    throw new Error(data.error?.message || 'Gemini error');
+    console.error('Groq error:', JSON.stringify(data));
+    throw new Error(data.error?.message || 'Groq API error');
   }
-
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return data.choices?.[0]?.message?.content || '';
 };
 
 exports.getRecommendations = async (req, res) => {
@@ -63,8 +67,8 @@ exports.generateContent = async (req, res) => {
   const { topic, amount } = req.body;
   if (!topic) return res.status(400).json({ success:false, message:'Topic required.' });
   try {
-    const prompt = `You are an AI for NASEER, a Palestinian humanitarian donation platform. Generate campaign content for: "${topic}" with PKR ${amount||1000}. Respond ONLY as valid JSON (no markdown): {"title":"max 8 words","description":"2-3 sentences","impact":"one sentence what PKR ${amount||1000} provides","urduTagline":"short urdu tagline","callToAction":"max 6 words"}`;
-    const text  = await callGemini(prompt);
+    const prompt = `You are an AI for NASEER, a Palestinian humanitarian donation platform. Generate campaign content for: "${topic}" with PKR ${amount||1000}. Respond ONLY as valid JSON (no markdown, no extra text): {"title":"max 8 words","description":"2-3 sentences","impact":"one sentence what PKR ${amount||1000} provides","urduTagline":"short urdu tagline","callToAction":"max 6 words"}`;
+    const text  = await callGroq([{ role:'user', content:prompt }]);
     const clean = text.replace(/```json/g,'').replace(/```/g,'').trim();
     res.json({ success:true, data:JSON.parse(clean) });
   } catch {
@@ -77,7 +81,7 @@ exports.getImpact = async (req, res) => {
     const campaign = await Campaign.findById(req.params.campaignId);
     if (!campaign) return res.status(404).json({ success:false, message:'Not found.' });
     if (campaign.impactStatement) return res.json({ success:true, data:{ statement:campaign.impactStatement } });
-    const statement = await callGemini(`One sentence under 20 words starting "PKR X can..." about donating to: ${campaign.title}. Only the sentence, no quotes.`);
+    const statement = await callGroq([{ role:'user', content:`One sentence under 20 words starting "PKR X can..." about donating to: ${campaign.title}. Only the sentence, no quotes.` }]);
     res.json({ success:true, data:{ statement:statement.trim() } });
   } catch {
     res.json({ success:true, data:{ statement:'PKR 1,000 provides a week of clean water for a Gaza family.' } });
@@ -93,54 +97,20 @@ exports.chat = async (req, res) => {
   res.setHeader('Connection','keep-alive');
 
   try {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) throw new Error('No Gemini key configured');
-
     const campaigns = await Campaign.find({ isActive:true })
       .select('title category raisedAmount targetAmount isUrgent emoji').lean();
     const campContext = campaigns.map(c =>
       `- ${c.emoji} ${c.title} (${c.category}): PKR ${(c.raisedAmount/1000).toFixed(0)}K of PKR ${(c.targetAmount/1000).toFixed(0)}K${c.isUrgent?' [URGENT]':''}`
     ).join('\n');
 
-    const systemText = `You are NASEER, a compassionate AI assistant for a Palestinian humanitarian donation platform. "NASEER" means "The Helper" in Arabic.
+    const systemPrompt = `You are NASEER, a compassionate AI assistant for a Palestinian humanitarian donation platform. "NASEER" means "The Helper" in Arabic.
 
 LIVE CAMPAIGNS:
 ${campContext}
 
-Help donors understand campaigns, how donations work (Zakat/Sadaqah/Lillah), NGO verification, and impact. Be warm, concise, and compassionate. Recommend urgent campaigns when asked what to donate to.`;
+Help donors understand campaigns, how donations work (Zakat/Sadaqah/Lillah), NGO verification, and impact. Be warm, concise, and compassionate. Recommend urgent campaigns when asked what to donate to. Keep responses under 100 words.`;
 
-    // Build contents with system context first
-    const contents = [
-      { role:'user',  parts:[{ text: systemText }] },
-      { role:'model', parts:[{ text: 'Understood! I am NASEER, ready to help donors support Palestine.' }] }
-    ];
-
-    messages.forEach(m => {
-      contents.push({
-        role:  m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      });
-    });
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        generationConfig: { maxOutputTokens: 500 }
-      })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('Gemini chat error:', JSON.stringify(data));
-      throw new Error(data.error?.message || 'Gemini API error');
-    }
-
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-      || "I'm sorry, I couldn't generate a response. Please try again.";
+    const text = await callGroq(messages, systemPrompt);
 
     res.write(`data: ${JSON.stringify({ text })}\n\n`);
     res.write('data: [DONE]\n\n');
@@ -148,7 +118,10 @@ Help donors understand campaigns, how donations work (Zakat/Sadaqah/Lillah), NGO
 
   } catch(err) {
     console.error('Chat error:', err.message);
-    res.write(`data: ${JSON.stringify({ text: `Error: ${err.message}` })}\n\n`);
+    const msg = err.message.includes('quota') || err.message.includes('rate')
+      ? "I'm getting too many requests. Please wait a moment and try again! 🕐"
+      : "I'm having trouble connecting. Please try again shortly.";
+    res.write(`data: ${JSON.stringify({ text: msg })}\n\n`);
     res.write('data: [DONE]\n\n');
     res.end();
   }
