@@ -6,7 +6,7 @@ const callGemini = async (prompt) => {
   if (!key) throw new Error('No Gemini key');
 
   // New v1beta endpoint that supports AQ.Ab... keys
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
 
   const res = await fetch(url, {
     method: 'POST',
@@ -122,7 +122,7 @@ Help donors understand campaigns, how donations work (Zakat/Sadaqah/Lillah), NGO
       });
     });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
