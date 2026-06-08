@@ -14,7 +14,8 @@ export const SocketProvider = ({ children }) => {
   const [unread, setUnread] = useState(0);
 
   useEffect(() => {
-    socketRef.current = io('/', { transports: ['websocket', 'polling'] });
+const BACKEND = process.env.REACT_APP_API_URL || '';
+socketRef.current = io(BACKEND, { transports: ['polling'] });
     const sock = socketRef.current;
 
     // Join user room for private notifications

@@ -27,7 +27,8 @@ const Chatbot = () => {
     setMessages(prev => [...prev, { role: 'assistant', content: '', streaming: true }]);
 
     try {
-      const res = await fetch('/api/ai/chat', {
+      const API = process.env.REACT_APP_API_URL || '';
+const res = await fetch(`${API}/api/ai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })) })
